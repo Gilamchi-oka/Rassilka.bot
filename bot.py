@@ -148,7 +148,10 @@ def send_email(to_email: str) -> bool:
         msg["From"]    = f"Green&Legal <{GMAIL}>"
         msg["To"]      = to_email
         msg.attach(MIMEText(get_email_html(), "html", "utf-8"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
             s.login(GMAIL, APP_PASSWORD)
             s.sendmail(GMAIL, to_email, msg.as_string())
         return True
@@ -179,6 +182,8 @@ async def sending_loop(bot, chat_id):
         ),
         parse_mode="MarkdownV2"
     )
+
+    first_email = True  # первое письмо — без паузы
 
     while state["running"]:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -252,11 +257,14 @@ async def sending_loop(bot, chat_id):
                 parse_mode="MarkdownV2"
             )
 
-        # Пауза между письмами
-        for _ in range(PAUSE_SECONDS):
-            if not state["running"]:
-                break
-            await asyncio.sleep(1)
+        # Пауза между письмами (первое — сразу, остальные с задержкой)
+        if first_email:
+            first_email = False
+        else:
+            for _ in range(PAUSE_SECONDS):
+                if not state["running"]:
+                    break
+                await asyncio.sleep(1)
 
 # ─── КЛАВИАТУРЫ ──────────────────────────────────────────────
 def main_keyboard(lang):
