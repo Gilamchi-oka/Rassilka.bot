@@ -8,29 +8,23 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    ContextTypes, ConversationHandler
+    ContextTypes
 )
 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
 GMAIL          = os.environ.get("GMAIL", "your_email@gmail.com")
 APP_PASSWORD   = os.environ.get("APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "your_bot_token")
-ADMIN_ID       = int(os.environ.get("ADMIN_ID", "0"))
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "your_username")  # без @
 
 EMAILS_FILE   = "emails.txt"
 PROGRESS_FILE = "progress.json"
 SENT_FILE     = "sent.txt"
 PAUSE_SECONDS = 40
+
 # ─────────────────────────────────────────────────────────────
-
-# Состояния ConversationHandler
-LANG, ONBOARD, WAIT_APPROVE, CHOOSE_LIMIT = range(4)
-
 # Глобальное состояние рассылки
 state = {
     "running": False,
-    "approved": False,
     "lang": "ru",
     "daily_limit": 100,
     "sent_today": 0,
@@ -46,55 +40,29 @@ T = {
         "ru": "🌿 *Добро пожаловать\\!*\n\nВыберите язык интерфейса:",
         "uz": "🌿 *Xush kelibsiz\\!*\n\nInterfeys tilini tanlang:",
     },
-    "about": {
+    "choose_limit": {
         "ru": (
             "📨 *Green\\&Legal — Email Рассылка*\n\n"
-            "Этот бот автоматически отправляет профессиональные письма от компании "
-            "*Green\\&Legal* на тысячи адресов — каждый день, без остановок\\.\n\n"
             "⚙️ *Возможности:*\n"
             "• Умный дневной лимит без блокировок\n"
             "• Пауза между письмами для защиты аккаунта\n"
             "• Прогресс сохраняется при перезапуске\n"
-            "• Повторная отправка исключена автоматически\n"
-            "• Управление одной кнопкой\n\n"
-            "Для начала работы — свяжитесь с администратором:"
-        ),
-        "uz": (
-            "📨 *Green\\&Legal — Email Tarqatish*\n\n"
-            "Ushbu bot *Green\\&Legal* kompaniyasidan minglab manzillarga "
-            "professional xatlarni avtomatik ravishda har kuni yuboradi\\.\n\n"
-            "⚙️ *Imkoniyatlar:*\n"
-            "• Bloklarsiz aqlli kunlik limit\n"
-            "• Hisobni himoya qilish uchun xatlar orasida pauza\n"
-            "• Qayta ishga tushirilganda jarayon saqlanadi\n"
-            "• Takroriy yuborish avtomatik chiqarib tashlanadi\n"
-            "• Bitta tugma bilan boshqarish\n\n"
-            "Boshlash uchun administrator bilan bog'laning:"
-        ),
-    },
-    "contact_btn": {
-        "ru": "✉️ Написать администратору",
-        "uz": "✉️ Administrator bilan bog'lanish",
-    },
-    "approved_msg": {
-        "ru": (
-            "✅ *Доступ одобрен\\!*\n\n"
-            "Отлично\\! Вы можете запустить рассылку\\.\n"
+            "• Повторная отправка исключена автоматически\n\n"
             "Выберите количество писем в день:"
         ),
         "uz": (
-            "✅ *Ruxsat berildi\\!*\n\n"
-            "Ajoyib\\! Siz tarqatishni boshlashingiz mumkin\\.\n"
+            "📨 *Green\\&Legal — Email Tarqatish*\n\n"
+            "⚙️ *Imkoniyatlar:*\n"
+            "• Bloklarsiz aqlli kunlik limit\n"
+            "• Hisobni himoya qilish uchun pauza\n"
+            "• Qayta ishga tushirilganda jarayon saqlanadi\n"
+            "• Takroriy yuborish avtomatik chiqarib tashlanadi\n\n"
             "Kunlik xatlar sonini tanlang:"
         ),
     },
-    "wait_approve": {
-        "ru": "⏳ Ваш запрос отправлен администратору\\. Ожидайте одобрения\\.",
-        "uz": "⏳ So'rovingiz administratorga yuborildi\\. Tasdiqlashni kuting\\.",
-    },
     "started": {
         "ru": "▶️ *Рассылка запущена\\!*\n\n📧 Адресов в базе: {total}\n✅ Уже отправлено: {sent}\n⏭ Пропущено \\(уже получили\\): {skipped}\n📅 Лимит: {limit} писем/день\n\nБот будет отправлять письма каждый день автоматически\\.",
-        "uz": "▶️ *Tarqatish boshlandi\\!*\n\n📧 Bazadagi manzillar: {total}\n✅ Allaqachon yuborilgan: {sent}\n⏭ O'tkazib yuborilgan \\(allaqachon olgan\\): {skipped}\n📅 Limit: {limit} xat/kun\n\nBot har kuni avtomatik ravishda xat yuboradi\\.",
+        "uz": "▶️ *Tarqatish boshlandi\\!*\n\n📧 Bazadagi manzillar: {total}\n✅ Allaqachon yuborilgan: {sent}\n⏭ O'tkazib yuborilgan: {skipped}\n📅 Limit: {limit} xat/kun\n\nBot har kuni avtomatik ravishda xat yuboradi\\.",
     },
     "stopped": {
         "ru": "⏹️ *Рассылка остановлена\\.*\n\nПрогресс сохранён\\. При следующем запуске выберите новый лимит\\.",
@@ -104,15 +72,15 @@ T = {
         "ru": "📊 *Статус рассылки*\n\n{icon} Состояние: {status}\n✅ Всего отправлено: {total}\n📅 Сегодня: {today}/{limit}\n📋 Осталось: {remaining}\n⏭ Уже получили ранее: {skipped}\n❌ Ошибок: {errors}",
         "uz": "📊 *Tarqatish holati*\n\n{icon} Holat: {status}\n✅ Jami yuborilgan: {total}\n📅 Bugun: {today}/{limit}\n📋 Qolgan: {remaining}\n⏭ Oldin olgan: {skipped}\n❌ Xatolar: {errors}",
     },
-    "status_run":  {"ru": "Работает 🟢",       "uz": "Ishlayapti 🟢"},
-    "status_stop": {"ru": "Остановлен 🔴",     "uz": "To'xtatilgan 🔴"},
+    "status_run":  {"ru": "Работает 🟢",   "uz": "Ishlayapti 🟢"},
+    "status_stop": {"ru": "Остановлен 🔴", "uz": "To'xtatilgan 🔴"},
     "already_running": {
-        "ru": "⚠️ Рассылка уже запущена! Нажмите «Стоп» чтобы остановить.",
-        "uz": "⚠️ Tarqatish allaqachon boshlangan! To'xtatish uchun «Stop» ni bosing.",
+        "ru": "⚠️ Рассылка уже запущена\\! Нажмите «Стоп» чтобы остановить\\.",
+        "uz": "⚠️ Tarqatish allaqachon boshlangan\\! To'xtatish uchun «Stop» ni bosing\\.",
     },
     "not_running": {
-        "ru": "⚠️ Рассылка не запущена.",
-        "uz": "⚠️ Tarqatish boshlanmagan.",
+        "ru": "⚠️ Рассылка не запущена\\.",
+        "uz": "⚠️ Tarqatish boshlanmagan\\.",
     },
     "daily_done": {
         "ru": "💤 Дневной лимит {limit} писем выполнен\\. Жду следующего дня\\.\\.\\.",
@@ -133,6 +101,7 @@ T = {
     "btn_start":  {"ru": "🚀 Начать рассылку",  "uz": "🚀 Tarqatishni boshlash"},
     "btn_stop":   {"ru": "⏹ Остановить",        "uz": "⏹ To'xtatish"},
     "btn_status": {"ru": "📊 Статус",            "uz": "📊 Holat"},
+    "btn_change": {"ru": "🔄 Сменить лимит",     "uz": "🔄 Limitni o'zgartirish"},
 }
 
 def t(key, lang=None):
@@ -189,11 +158,11 @@ def send_email(to_email: str) -> bool:
 
 # ─── ЦИКЛ РАССЫЛКИ ───────────────────────────────────────────
 async def sending_loop(bot, chat_id):
-    emails    = load_emails()
-    sent_set  = load_sent()
-    lang      = state["lang"]
-    limit     = state["daily_limit"]
-    skipped   = 0
+    emails   = load_emails()
+    sent_set = load_sent()
+    lang     = state["lang"]
+    limit    = state["daily_limit"]
+    skipped  = 0
 
     today = datetime.now().strftime("%Y-%m-%d")
     if state["last_date"] != today:
@@ -292,9 +261,10 @@ async def sending_loop(bot, chat_id):
 # ─── КЛАВИАТУРЫ ──────────────────────────────────────────────
 def main_keyboard(lang):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_start", lang),  callback_data="do_start")],
-        [InlineKeyboardButton(t("btn_stop",  lang),  callback_data="do_stop"),
-         InlineKeyboardButton(t("btn_status",lang),  callback_data="do_status")],
+        [InlineKeyboardButton(t("btn_start",  lang), callback_data="do_start")],
+        [InlineKeyboardButton(t("btn_stop",   lang), callback_data="do_stop"),
+         InlineKeyboardButton(t("btn_status", lang), callback_data="do_status")],
+        [InlineKeyboardButton(t("btn_change", lang), callback_data="change_limit")],
     ])
 
 def limit_keyboard(lang):
@@ -305,92 +275,59 @@ def limit_keyboard(lang):
          InlineKeyboardButton("📩 500 писем/день", callback_data="limit_500")],
     ])
 
-# ─── /start ──────────────────────────────────────────────────
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lang_keyboard = InlineKeyboardMarkup([
+def lang_keyboard():
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
          InlineKeyboardButton("🇺🇿 O'zbek",  callback_data="lang_uz")],
     ])
+
+# ─── /start ──────────────────────────────────────────────────
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         t("welcome", "ru"),
-        reply_markup=lang_keyboard,
+        reply_markup=lang_keyboard(),
         parse_mode="MarkdownV2"
     )
 
 # ─── CALLBACK HANDLER ────────────────────────────────────────
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query   = update.callback_query
+    query = update.callback_query
     await query.answer()
-    data    = query.data
-    user_id = query.from_user.id
-    lang    = state.get("lang", "ru")
+    data  = query.data
+    lang  = state.get("lang", "ru")
 
     # ── Выбор языка ──
     if data in ("lang_ru", "lang_uz"):
-        chosen = data.split("_")[1]
-        state["lang"] = chosen
+        state["lang"] = data.split("_")[1]
         save_progress()
-        lang = chosen
-
-        contact_btn = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                t("contact_btn", lang),
-                url=f"https://t.me/{ADMIN_USERNAME}"
-            )]
-        ])
+        lang = state["lang"]
         await query.edit_message_text(
-            t("about", lang),
-            reply_markup=contact_btn,
+            t("choose_limit", lang),
+            reply_markup=limit_keyboard(lang),
             parse_mode="MarkdownV2"
         )
-
-        if user_id != ADMIN_ID:
-            try:
-                await context.bot.send_message(
-                    ADMIN_ID,
-                    f"🔔 Новый пользователь хочет доступ к боту\\!\n"
-                    f"ID: `{user_id}`\n"
-                    f"Имя: {query.from_user.full_name}\n\n"
-                    f"Если хотите одобрить — нажмите:",
-                    parse_mode="MarkdownV2",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton(
-                            "✅ Одобрить",
-                            callback_data=f"approve_{user_id}"
-                        )
-                    ]])
-                )
-            except Exception:
-                pass
         return
 
-    # ── Одобрение пользователя ──
-    if data.startswith("approve_") and user_id == ADMIN_ID:
-        target_id = int(data.split("_")[1])
-        await query.edit_message_text("✅ Пользователь одобрен\\!", parse_mode="MarkdownV2")
-        try:
-            await context.bot.send_message(
-                target_id,
-                t("approved_msg", lang),
-                reply_markup=limit_keyboard(lang),
-                parse_mode="MarkdownV2"
-            )
-        except Exception:
-            pass
-        return
-
-    # ── Остальное — только для админа ──
-    if user_id != ADMIN_ID:
-        return
-
-    # ── Выбор лимита ──
+    # ── Выбор / смена лимита ──
     if data.startswith("limit_"):
         limit = int(data.split("_")[1])
         state["daily_limit"] = limit
         save_progress()
         await query.edit_message_text(
-            f"✅ Установлен лимит: *{limit} писем/день*\n\nНажмите кнопку ниже чтобы запустить рассылку:",
+            f"✅ Установлен лимит: *{limit} писем/день*\n\nВыберите действие:",
             reply_markup=main_keyboard(lang),
+            parse_mode="MarkdownV2"
+        )
+        return
+
+    # ── Показать выбор лимита ──
+    if data == "change_limit":
+        if state["running"]:
+            await query.answer("⚠️ Сначала остановите рассылку!", show_alert=True)
+            return
+        await query.edit_message_text(
+            t("choose_limit", lang),
+            reply_markup=limit_keyboard(lang),
             parse_mode="MarkdownV2"
         )
         return
@@ -425,9 +362,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Статус ──
     if data == "do_status":
         emails    = load_emails()
-        total     = len(emails)
         sent_set  = load_sent()
-        remaining = max(0, total - state["current_index"])
+        remaining = max(0, len(emails) - state["current_index"])
         icon      = "🟢" if state["running"] else "🔴"
         status    = t("status_run", lang) if state["running"] else t("status_stop", lang)
         await query.edit_message_text(
@@ -449,7 +385,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── ЗАПУСК ──────────────────────────────────────────────────
 def main():
     import time
-    time.sleep(3)  # даём старому контейнеру время умереть
+    time.sleep(3)
     load_progress()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
