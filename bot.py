@@ -1,7 +1,8 @@
 import os
 import asyncio
-import smtplib
 import json
+import base64
+import requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
@@ -10,11 +11,17 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     ContextTypes
 )
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleRequest
 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
-GMAIL          = os.environ.get("GMAIL", "your_email@gmail.com")
-APP_PASSWORD   = os.environ.get("APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "your_bot_token")
+
+# Gmail API OAuth2 (получить через Google Cloud Console)
+GMAIL_ADDRESS      = os.environ.get("GMAIL_ADDRESS", "your_email@gmail.com")
+GMAIL_CLIENT_ID    = os.environ.get("GMAIL_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET= os.environ.get("GMAIL_CLIENT_SECRET", "")
+GMAIL_REFRESH_TOKEN= os.environ.get("GMAIL_REFRESH_TOKEN", "")
 
 EMAILS_FILE   = "emails.txt"
 PROGRESS_FILE = "progress.json"
@@ -22,7 +29,6 @@ SENT_FILE     = "sent.txt"
 PAUSE_SECONDS = 40
 
 # ─────────────────────────────────────────────────────────────
-# Глобальное состояние рассылки
 state = {
     "running": False,
     "lang": "ru",
@@ -140,20 +146,49 @@ def mark_sent(email: str):
     with open(SENT_FILE, "a") as f:
         f.write(email.lower() + "\n")
 
-# ─── ОТПРАВКА ПИСЬМА ─────────────────────────────────────────
+# ─── GMAIL API: получение свежего access_token ───────────────
+def get_access_token() -> str:
+    """
+    Обновляет access_token через refresh_token (HTTPS на 443 — Railway не блокирует).
+    Требует переменных окружения: GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN
+    """
+    creds = Credentials(
+        token=None,
+        refresh_token=GMAIL_REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GMAIL_CLIENT_ID,
+        client_secret=GMAIL_CLIENT_SECRET,
+        scopes=["https://www.googleapis.com/auth/gmail.send"],
+    )
+    creds.refresh(GoogleRequest())
+    return creds.token
+
+# ─── ОТПРАВКА ПИСЬМА через Gmail API ─────────────────────────
 def send_email(to_email: str) -> bool:
+    """
+    Отправляет письмо через Gmail REST API (HTTPS/443).
+    Не использует SMTP — работает на Railway и любом хостинге.
+    """
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Green&Legal — Zamonaviy va barqaror huquqiy yechimlar"
-        msg["From"]    = f"Green&Legal <{GMAIL}>"
+        msg["From"]    = f"Green&Legal <{GMAIL_ADDRESS}>"
         msg["To"]      = to_email
         msg.attach(MIMEText(get_email_html(), "html", "utf-8"))
-        with smtplib.SMTP("smtp.gmail.com", 587) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(GMAIL, APP_PASSWORD)
-            s.sendmail(GMAIL, to_email, msg.as_string())
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        access_token = get_access_token()
+
+        resp = requests.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"raw": raw},
+            timeout=30,
+        )
+        resp.raise_for_status()
         return True
     except Exception as e:
         print(f"[ERROR] {to_email}: {e}")
@@ -183,12 +218,11 @@ async def sending_loop(bot, chat_id):
         parse_mode="MarkdownV2"
     )
 
-    first_email = True  # первое письмо — без паузы
+    first_email = True
 
     while state["running"]:
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # Новый день — сброс дневного счётчика
         if state["last_date"] != today:
             state["sent_today"] = 0
             state["last_date"]  = today
@@ -198,7 +232,6 @@ async def sending_loop(bot, chat_id):
                 parse_mode="MarkdownV2"
             )
 
-        # Дневной лимит выполнен
         if state["sent_today"] >= limit:
             await bot.send_message(
                 chat_id,
@@ -209,7 +242,6 @@ async def sending_loop(bot, chat_id):
                 await asyncio.sleep(300)
             continue
 
-        # Все адреса пройдены
         if state["current_index"] >= len(emails):
             await bot.send_message(
                 chat_id,
@@ -227,13 +259,11 @@ async def sending_loop(bot, chat_id):
         email = emails[state["current_index"]]
         state["current_index"] += 1
 
-        # Пропускаем уже отправленные
         if email.lower() in sent_set:
             skipped += 1
             save_progress()
             continue
 
-        # Отправляем
         if send_email(email):
             sent_set.add(email.lower())
             mark_sent(email)
@@ -245,7 +275,6 @@ async def sending_loop(bot, chat_id):
 
         save_progress()
 
-        # Прогресс каждые 50 отправленных
         if state["total_sent"] % 50 == 0 and state["total_sent"] > 0:
             await bot.send_message(
                 chat_id,
@@ -257,7 +286,6 @@ async def sending_loop(bot, chat_id):
                 parse_mode="MarkdownV2"
             )
 
-        # Пауза между письмами (первое — сразу, остальные с задержкой)
         if first_email:
             first_email = False
         else:
@@ -300,11 +328,16 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── CALLBACK HANDLER ────────────────────────────────────────
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    data  = query.data
     lang  = state.get("lang", "ru")
 
-    # ── Выбор языка ──
+    # ── FIX: "Query is too old" не крашит бот ──
+    try:
+        await query.answer()
+    except Exception:
+        pass  # Telegram отклонил answer() — callback устарел, продолжаем
+
+    data = query.data
+
     if data in ("lang_ru", "lang_uz"):
         state["lang"] = data.split("_")[1]
         save_progress()
@@ -316,7 +349,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Выбор / смена лимита ──
     if data.startswith("limit_"):
         limit = int(data.split("_")[1])
         state["daily_limit"] = limit
@@ -328,10 +360,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Показать выбор лимита ──
     if data == "change_limit":
         if state["running"]:
-            await query.answer("⚠️ Сначала остановите рассылку!", show_alert=True)
+            try:
+                await query.answer("⚠️ Сначала остановите рассылку!", show_alert=True)
+            except Exception:
+                pass
             return
         await query.edit_message_text(
             t("choose_limit", lang),
@@ -340,23 +374,30 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Запуск ──
     if data == "do_start":
         if state["running"]:
-            await query.answer(t("already_running", lang), show_alert=True)
+            try:
+                await query.answer(t("already_running", lang), show_alert=True)
+            except Exception:
+                pass
             return
         emails = load_emails()
         if not emails:
-            await query.answer("❌ emails.txt пуст!", show_alert=True)
+            try:
+                await query.answer("❌ emails.txt пуст!", show_alert=True)
+            except Exception:
+                pass
             return
         state["running"] = True
         asyncio.create_task(sending_loop(context.bot, query.message.chat_id))
         return
 
-    # ── Стоп ──
     if data == "do_stop":
         if not state["running"]:
-            await query.answer(t("not_running", lang), show_alert=True)
+            try:
+                await query.answer(t("not_running", lang), show_alert=True)
+            except Exception:
+                pass
             return
         state["running"] = False
         save_progress()
@@ -367,7 +408,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Статус ──
     if data == "do_status":
         emails    = load_emails()
         sent_set  = load_sent()
