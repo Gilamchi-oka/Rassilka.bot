@@ -235,7 +235,7 @@ async def sending_loop(bot, chat_id):
                 await asyncio.sleep(300)
             continue
 
-        # Все адреса пройдены
+        # Все адреса пройденыInlineKeyboardButton("🇷🇺 Русский",
         if state["current_index"] >= len(emails):
             await bot.send_message(
                 chat_id,
@@ -314,7 +314,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         t("welcome", "ru"),
         reply_markup=lang_keyboard,
-        parse_mode="MarkdownV2"
     )
 
 # ─── CALLBACK HANDLER ────────────────────────────────────────
