@@ -12,14 +12,15 @@ from telegram.ext import (
 )
 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
-GMAIL         = os.environ.get("GMAIL", "your_email@gmail.com")
-APP_PASSWORD  = os.environ.get("APP_PASSWORD", "xxxx xxxx xxxx xxxx")
+GMAIL          = os.environ.get("GMAIL", "your_email@gmail.com")
+APP_PASSWORD   = os.environ.get("APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "your_bot_token")
-ADMIN_ID      = int(os.environ.get("ADMIN_ID", "0"))
+ADMIN_ID       = int(os.environ.get("ADMIN_ID", "0"))
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "your_username")  # без @
 
 EMAILS_FILE   = "emails.txt"
 PROGRESS_FILE = "progress.json"
+SENT_FILE     = "sent.txt"
 PAUSE_SECONDS = 40
 # ─────────────────────────────────────────────────────────────
 
@@ -42,8 +43,8 @@ state = {
 # ─── ТЕКСТЫ (RU / UZ) ────────────────────────────────────────
 T = {
     "welcome": {
-        "ru": "🌿 *Добро пожаловать!*\n\nВыберите язык интерфейса:",
-        "uz": "🌿 *Xush kelibsiz!*\n\nInterfeys tilini tanlang:",
+        "ru": "🌿 *Добро пожаловать\\!*\n\nВыберите язык интерфейса:",
+        "uz": "🌿 *Xush kelibsiz\\!*\n\nInterfeys tilini tanlang:",
     },
     "about": {
         "ru": (
@@ -54,6 +55,7 @@ T = {
             "• Умный дневной лимит без блокировок\n"
             "• Пауза между письмами для защиты аккаунта\n"
             "• Прогресс сохраняется при перезапуске\n"
+            "• Повторная отправка исключена автоматически\n"
             "• Управление одной кнопкой\n\n"
             "Для начала работы — свяжитесь с администратором:"
         ),
@@ -65,6 +67,7 @@ T = {
             "• Bloklarsiz aqlli kunlik limit\n"
             "• Hisobni himoya qilish uchun xatlar orasida pauza\n"
             "• Qayta ishga tushirilganda jarayon saqlanadi\n"
+            "• Takroriy yuborish avtomatik chiqarib tashlanadi\n"
             "• Bitta tugma bilan boshqarish\n\n"
             "Boshlash uchun administrator bilan bog'laning:"
         ),
@@ -90,26 +93,26 @@ T = {
         "uz": "⏳ So'rovingiz administratorga yuborildi\\. Tasdiqlashni kuting\\.",
     },
     "started": {
-        "ru": "▶️ *Рассылка запущена\\!*\n\n📧 Адресов в базе: {total}\n✅ Уже отправлено: {sent}\n📅 Лимит: {limit} писем/день\n\nБот будет отправлять письма каждый день автоматически\\.",
-        "uz": "▶️ *Tarqatish boshlandi\\!*\n\n📧 Bazadagi manzillar: {total}\n✅ Allaqachon yuborilgan: {sent}\n📅 Limit: {limit} xat/kun\n\nBot har kuni avtomatik ravishda xat yuboradi\\.",
+        "ru": "▶️ *Рассылка запущена\\!*\n\n📧 Адресов в базе: {total}\n✅ Уже отправлено: {sent}\n⏭ Пропущено \\(уже получили\\): {skipped}\n📅 Лимит: {limit} писем/день\n\nБот будет отправлять письма каждый день автоматически\\.",
+        "uz": "▶️ *Tarqatish boshlandi\\!*\n\n📧 Bazadagi manzillar: {total}\n✅ Allaqachon yuborilgan: {sent}\n⏭ O'tkazib yuborilgan \\(allaqachon olgan\\): {skipped}\n📅 Limit: {limit} xat/kun\n\nBot har kuni avtomatik ravishda xat yuboradi\\.",
     },
     "stopped": {
         "ru": "⏹️ *Рассылка остановлена\\.*\n\nПрогресс сохранён\\. При следующем запуске выберите новый лимит\\.",
         "uz": "⏹️ *Tarqatish to'xtatildi\\.*\n\nJarayon saqlandi\\. Keyingi ishga tushirishda yangi limit tanlang\\.",
     },
     "status_text": {
-        "ru": "📊 *Статус рассылки*\n\n{icon} Состояние: {status}\n✅ Всего отправлено: {total}\n📅 Сегодня: {today}/{limit}\n📋 Осталось: {remaining}\n❌ Ошибок: {errors}",
-        "uz": "📊 *Tarqatish holati*\n\n{icon} Holat: {status}\n✅ Jami yuborilgan: {total}\n📅 Bugun: {today}/{limit}\n📋 Qolgan: {remaining}\n❌ Xatolar: {errors}",
+        "ru": "📊 *Статус рассылки*\n\n{icon} Состояние: {status}\n✅ Всего отправлено: {total}\n📅 Сегодня: {today}/{limit}\n📋 Осталось: {remaining}\n⏭ Уже получили ранее: {skipped}\n❌ Ошибок: {errors}",
+        "uz": "📊 *Tarqatish holati*\n\n{icon} Holat: {status}\n✅ Jami yuborilgan: {total}\n📅 Bugun: {today}/{limit}\n📋 Qolgan: {remaining}\n⏭ Oldin olgan: {skipped}\n❌ Xatolar: {errors}",
     },
-    "status_run": {"ru": "Работает 🟢", "uz": "Ishlayapti 🟢"},
-    "status_stop": {"ru": "Остановлен 🔴", "uz": "To'xtatilgan 🔴"},
+    "status_run":  {"ru": "Работает 🟢",       "uz": "Ishlayapti 🟢"},
+    "status_stop": {"ru": "Остановлен 🔴",     "uz": "To'xtatilgan 🔴"},
     "already_running": {
-        "ru": "⚠️ Рассылка уже запущена\\! Нажмите «Стоп» чтобы остановить\\.",
-        "uz": "⚠️ Tarqatish allaqachon boshlangan\\! To'xtatish uchun «Stop» ni bosing\\.",
+        "ru": "⚠️ Рассылка уже запущена! Нажмите «Стоп» чтобы остановить.",
+        "uz": "⚠️ Tarqatish allaqachon boshlangan! To'xtatish uchun «Stop» ni bosing.",
     },
     "not_running": {
-        "ru": "⚠️ Рассылка не запущена\\.",
-        "uz": "⚠️ Tarqatish boshlanmagan\\.",
+        "ru": "⚠️ Рассылка не запущена.",
+        "uz": "⚠️ Tarqatish boshlanmagan.",
     },
     "daily_done": {
         "ru": "💤 Дневной лимит {limit} писем выполнен\\. Жду следующего дня\\.\\.\\.",
@@ -120,16 +123,16 @@ T = {
         "uz": "🌅 Yangi kun — keyingi {limit} ta xat yuborishni boshlayman\\!",
     },
     "progress_update": {
-        "ru": "📬 Отправлено {sent} из {total}",
-        "uz": "📬 {total} tadan {sent} tasi yuborildi",
+        "ru": "📬 Отправлено {sent} из {total} \\(пропущено дублей: {skipped}\\)",
+        "uz": "📬 {total} tadan {sent} tasi yuborildi \\(o'tkazib yuborildi: {skipped}\\)",
     },
     "finished": {
-        "ru": "🎉 *Рассылка завершена\\!*\n\n✅ Всего отправлено: {sent}\n❌ Ошибок: {errors}",
-        "uz": "🎉 *Tarqatish yakunlandi\\!*\n\n✅ Jami yuborilgan: {sent}\n❌ Xatolar: {errors}",
+        "ru": "🎉 *Рассылка завершена\\!*\n\n✅ Всего отправлено: {sent}\n⏭ Пропущено дублей: {skipped}\n❌ Ошибок: {errors}",
+        "uz": "🎉 *Tarqatish yakunlandi\\!*\n\n✅ Jami yuborilgan: {sent}\n⏭ O'tkazib yuborilgan: {skipped}\n❌ Xatolar: {errors}",
     },
-    "btn_start": {"ru": "🚀 Начать рассылку", "uz": "🚀 Tarqatishni boshlash"},
-    "btn_stop":  {"ru": "⏹ Остановить",       "uz": "⏹ To'xtatish"},
-    "btn_status":{"ru": "📊 Статус",           "uz": "📊 Holat"},
+    "btn_start":  {"ru": "🚀 Начать рассылку",  "uz": "🚀 Tarqatishni boshlash"},
+    "btn_stop":   {"ru": "⏹ Остановить",        "uz": "⏹ To'xtatish"},
+    "btn_status": {"ru": "📊 Статус",            "uz": "📊 Holat"},
 }
 
 def t(key, lang=None):
@@ -157,6 +160,17 @@ def get_email_html():
     with open("email_template.html", encoding="utf-8") as f:
         return f.read()
 
+# ─── ОТПРАВЛЕННЫЕ АДРЕСА ─────────────────────────────────────
+def load_sent() -> set:
+    if not os.path.exists(SENT_FILE):
+        return set()
+    with open(SENT_FILE) as f:
+        return set(l.strip().lower() for l in f if l.strip())
+
+def mark_sent(email: str):
+    with open(SENT_FILE, "a") as f:
+        f.write(email.lower() + "\n")
+
 # ─── ОТПРАВКА ПИСЬМА ─────────────────────────────────────────
 def send_email(to_email: str) -> bool:
     try:
@@ -175,9 +189,11 @@ def send_email(to_email: str) -> bool:
 
 # ─── ЦИКЛ РАССЫЛКИ ───────────────────────────────────────────
 async def sending_loop(bot, chat_id):
-    emails = load_emails()
-    lang   = state["lang"]
-    limit  = state["daily_limit"]
+    emails    = load_emails()
+    sent_set  = load_sent()
+    lang      = state["lang"]
+    limit     = state["daily_limit"]
+    skipped   = 0
 
     today = datetime.now().strftime("%Y-%m-%d")
     if state["last_date"] != today:
@@ -187,7 +203,10 @@ async def sending_loop(bot, chat_id):
     await bot.send_message(
         chat_id,
         t("started", lang).format(
-            total=len(emails), sent=state["total_sent"], limit=limit
+            total=len(emails),
+            sent=state["total_sent"],
+            skipped=len(sent_set),
+            limit=limit,
         ),
         parse_mode="MarkdownV2"
     )
@@ -195,6 +214,7 @@ async def sending_loop(bot, chat_id):
     while state["running"]:
         today = datetime.now().strftime("%Y-%m-%d")
 
+        # Новый день — сброс дневного счётчика
         if state["last_date"] != today:
             state["sent_today"] = 0
             state["last_date"]  = today
@@ -204,6 +224,7 @@ async def sending_loop(bot, chat_id):
                 parse_mode="MarkdownV2"
             )
 
+        # Дневной лимит выполнен
         if state["sent_today"] >= limit:
             await bot.send_message(
                 chat_id,
@@ -214,10 +235,15 @@ async def sending_loop(bot, chat_id):
                 await asyncio.sleep(300)
             continue
 
+        # Все адреса пройдены
         if state["current_index"] >= len(emails):
             await bot.send_message(
                 chat_id,
-                t("finished", lang).format(sent=state["total_sent"], errors=state["errors"]),
+                t("finished", lang).format(
+                    sent=state["total_sent"],
+                    skipped=skipped,
+                    errors=state["errors"]
+                ),
                 parse_mode="MarkdownV2"
             )
             state["running"] = False
@@ -225,29 +251,45 @@ async def sending_loop(bot, chat_id):
             break
 
         email = emails[state["current_index"]]
+        state["current_index"] += 1
+
+        # Пропускаем уже отправленные
+        if email.lower() in sent_set:
+            skipped += 1
+            save_progress()
+            continue
+
+        # Отправляем
         if send_email(email):
-            state["sent_today"]  += 1
-            state["total_sent"]  += 1
+            sent_set.add(email.lower())
+            mark_sent(email)
+            state["sent_today"] += 1
+            state["total_sent"] += 1
             print(f"[OK] {email} | Today: {state['sent_today']}/{limit} | Total: {state['total_sent']}")
         else:
             state["errors"] += 1
 
-        state["current_index"] += 1
         save_progress()
 
+        # Прогресс каждые 50 отправленных
         if state["total_sent"] % 50 == 0 and state["total_sent"] > 0:
             await bot.send_message(
                 chat_id,
-                t("progress_update", lang).format(sent=state["total_sent"], total=len(emails)),
+                t("progress_update", lang).format(
+                    sent=state["total_sent"],
+                    total=len(emails),
+                    skipped=skipped,
+                ),
                 parse_mode="MarkdownV2"
             )
 
+        # Пауза между письмами
         for _ in range(PAUSE_SECONDS):
             if not state["running"]:
                 break
             await asyncio.sleep(1)
 
-# ─── ГЛАВНОЕ МЕНЮ (кнопки) ───────────────────────────────────
+# ─── КЛАВИАТУРЫ ──────────────────────────────────────────────
 def main_keyboard(lang):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(t("btn_start", lang),  callback_data="do_start")],
@@ -257,17 +299,17 @@ def main_keyboard(lang):
 
 def limit_keyboard(lang):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📩 100 писем/день",  callback_data="limit_100"),
-         InlineKeyboardButton("📩 200 писем/день",  callback_data="limit_200")],
-        [InlineKeyboardButton("📩 300 писем/день",  callback_data="limit_300"),
-         InlineKeyboardButton("📩 500 писем/день",  callback_data="limit_500")],
+        [InlineKeyboardButton("📩 100 писем/день", callback_data="limit_100"),
+         InlineKeyboardButton("📩 200 писем/день", callback_data="limit_200")],
+        [InlineKeyboardButton("📩 300 писем/день", callback_data="limit_300"),
+         InlineKeyboardButton("📩 500 писем/день", callback_data="limit_500")],
     ])
 
-# ─── /start — ПРИВЕТСТВИЕ ────────────────────────────────────
+# ─── /start ──────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇷🇺 Русский",  callback_data="lang_ru"),
-         InlineKeyboardButton("🇺🇿 O'zbek",   callback_data="lang_uz")],
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
+         InlineKeyboardButton("🇺🇿 O'zbek",  callback_data="lang_uz")],
     ])
     await update.message.reply_text(
         t("welcome", "ru"),
@@ -277,11 +319,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── CALLBACK HANDLER ────────────────────────────────────────
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query   = update.callback_query
     await query.answer()
-    data = query.data
+    data    = query.data
     user_id = query.from_user.id
-    lang = state.get("lang", "ru")
+    lang    = state.get("lang", "ru")
 
     # ── Выбор языка ──
     if data in ("lang_ru", "lang_uz"):
@@ -302,7 +344,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="MarkdownV2"
         )
 
-        # Уведомить админа если не он сам
         if user_id != ADMIN_ID:
             try:
                 await context.bot.send_message(
@@ -323,7 +364,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ── Админ одобряет пользователя ──
+    # ── Одобрение пользователя ──
     if data.startswith("approve_") and user_id == ADMIN_ID:
         target_id = int(data.split("_")[1])
         await query.edit_message_text("✅ Пользователь одобрен\\!", parse_mode="MarkdownV2")
@@ -338,7 +379,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── Для всех остальных действий — только админ ──
+    # ── Остальное — только для админа ──
     if user_id != ADMIN_ID:
         return
 
@@ -357,7 +398,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Запуск ──
     if data == "do_start":
         if state["running"]:
-            await query.answer(t("already_running", lang).replace("\\", ""), show_alert=True)
+            await query.answer(t("already_running", lang), show_alert=True)
             return
         emails = load_emails()
         if not emails:
@@ -370,7 +411,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Стоп ──
     if data == "do_stop":
         if not state["running"]:
-            await query.answer(t("not_running", lang).replace("\\", ""), show_alert=True)
+            await query.answer(t("not_running", lang), show_alert=True)
             return
         state["running"] = False
         save_progress()
@@ -383,19 +424,22 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Статус ──
     if data == "do_status":
-        emails  = load_emails()
-        total   = len(emails)
+        emails    = load_emails()
+        total     = len(emails)
+        sent_set  = load_sent()
         remaining = max(0, total - state["current_index"])
-        icon    = "🟢" if state["running"] else "🔴"
-        status  = t("status_run", lang) if state["running"] else t("status_stop", lang)
+        icon      = "🟢" if state["running"] else "🔴"
+        status    = t("status_run", lang) if state["running"] else t("status_stop", lang)
         await query.edit_message_text(
             t("status_text", lang).format(
-                icon=icon, status=status,
+                icon=icon,
+                status=status,
                 total=state["total_sent"],
                 today=state["sent_today"],
                 limit=state["daily_limit"],
                 remaining=remaining,
-                errors=state["errors"]
+                skipped=len(sent_set),
+                errors=state["errors"],
             ),
             reply_markup=main_keyboard(lang),
             parse_mode="MarkdownV2"
