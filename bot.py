@@ -235,7 +235,7 @@ async def sending_loop(bot, chat_id):
                 await asyncio.sleep(300)
             continue
 
-        # Все адреса пройденыInlineKeyboardButton("🇷🇺 Русский",
+        # Все адреса пройдены
         if state["current_index"] >= len(emails):
             await bot.send_message(
                 chat_id,
@@ -314,6 +314,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         t("welcome", "ru"),
         reply_markup=lang_keyboard,
+        parse_mode="MarkdownV2"
     )
 
 # ─── CALLBACK HANDLER ────────────────────────────────────────
@@ -447,12 +448,17 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── ЗАПУСК ──────────────────────────────────────────────────
 def main():
+    import time
+    time.sleep(3)  # даём старому контейнеру время умереть
     load_progress()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
     print("✅ Бот запущен")
-    app.run_polling()
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 if __name__ == "__main__":
     main()
